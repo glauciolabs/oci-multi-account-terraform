@@ -63,3 +63,27 @@ variable "private_key_path" {
   type        = string
   description = "Path to OCI API private key"
 }
+
+variable "instance_count" {
+  type        = number
+  description = "number of instances to create"
+  default     = 2
+}
+
+variable "instance_shape" {
+  type        = string
+  description = "instance shape"
+  default     = "VM.Standard.A1.Flex"
+}
+
+variable "instance_memory_gb" {
+  type        = number
+  description = "memory in GB for each instance"
+  default     = 12
+}
+
+variable "instance_ocpus" {
+  type        = number
+  description = "number of OCPUs for each instance"
+  default     = 2
+}

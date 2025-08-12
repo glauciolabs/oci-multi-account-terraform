@@ -31,4 +31,9 @@ module "oci_ampere_instance" {
   subnet_id           = module.oci_network.subnet_id
   image_ocid          = var.image_ocid
   ssh_key             = var.ssh_key
+  instance_count      = var.instance_count
+  instance_shape      = var.instance_shape
+  instance_memory_gb  = var.instance_memory_gb
+  instance_ocpus      = var.instance_ocpus
+  instance_prefix     = var.prefix
 }
