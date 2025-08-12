@@ -1,0 +1,73 @@
+name: Terraform OCI Multi-Account
+
+on:
+  workflow_dispatch:
+    inputs:
+      account_number:
+        description: "choose account"
+        required: true
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '3'
+
+      operation:
+        description: "terraform operation"
+        required: true
+        type: choice
+        options:
+          - 'plan'
+          - 'apply'
+          - 'destroy'
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Terraform
+        run: |
+          curl -sL https://releases.hashicorp.com/terraform/1.12.2/terraform_1.12.2_linux_amd64.zip -o terraform.zip
+          unzip -q terraform.zip
+          sudo mv terraform /usr/local/bin/
+          rm terraform.zip
+          terraform -v
+      
+      - name: Run Terraform for selected account
+        run: |
+          echo "🔍 Decoding secret..."
+          DECODED_JSON=$(echo '${{ secrets.OCI_ACCOUNTS_JSON }}' | base64 -d)
+          
+          # Debug: Show first 100 characters (hide sensitive data)
+          echo "🔍 Secret preview (first 100 chars):"
+          echo "$DECODED_JSON" | head -c 100
+          echo ""
+          
+          # Debug: Validate JSON structure
+          echo "🔍 Validating JSON structure:"
+          if echo "$DECODED_JSON" | jq empty 2>/dev/null; then
+              echo "✅ JSON is valid"
+          else
+              echo "❌ JSON is invalid - showing errors:"
+              echo "$DECODED_JSON" | jq empty
+              exit 1
+          fi
+
+          # Pass the FULL JSON structure
+          echo "$DECODED_JSON" > /tmp/teste.json
+      
+          pwd
+      
+          bash ./scripts/run.sh /tmp/teste.json ${{ github.event.inputs.account_number }} ${{ github.event.inputs.operation }} $(pwd)/accounts
+      
+          rm -rf /tmp/teste.json
+
+      - name: Clean up sensitive files
+        if: always()
+        working-directory: ./accounts
+        run: |
+          rm -f private_key.pem
