@@ -1,3 +1,6 @@
+[![Terraform OCI IaC Workflow](https://github.com/glauciolabs/oci-iac-ops/actions/workflows/terraform.yml/badge.svg)](https://github.com/glauciolabs/oci-iac-ops/actions/workflows/terraform.yml)
+
+
 # Terraform OCI Multi-Account Infrastructure
 
 This guide will help you understand and use the Terraform solution for deploying Oracle Cloud Infrastructure (OCI) resources across multiple accounts. It’s detailed and beginner-friendly to help users new to Terraform, OCI, or infrastructure automation.

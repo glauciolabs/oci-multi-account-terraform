@@ -1,5 +1,14 @@
 # 📦 CHANGELOG
 
+## v1.0.1 — Fix Terraform install version in CI/CD 🔧
+
+### Fixed
+- Enforced Terraform v1.13.0 in `install-terraform.sh`
+- Updated GitHub Actions workflow to use the script correctly
+- Added workflow badge to `README.md`
+
+---
+
 ## v1.0.0 — Modular & Multi-Account OCI Infrastructure 🚀
 
 ### Highlights
