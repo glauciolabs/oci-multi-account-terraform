@@ -1,6 +1,6 @@
 # Local .terraform directories
 .terraform/
-
+.env
 # .tfstate files
 *.tfstate
 *.tfstate.*
@@ -39,3 +39,4 @@ terraform.rc
 accounts/account1/.terraform.lock.hcl
 accounts/private_key.pem
 accounts/.terraform.lock.hcl
+.DS_Store

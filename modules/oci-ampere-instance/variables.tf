@@ -55,3 +55,15 @@ variable "instance_prefix" {
   type        = string
   description = "Instance name prefix"
 }
+
+variable "assign_public_ip" {
+  type        = bool
+  description = "Controls whether a public IP is assigned to the instance's VNIC."
+  default     = true
+}
+
+variable "user_data" {
+  type        = string
+  description = "Cloud-init user data script, base64 encoded."
+  default     = null
+}

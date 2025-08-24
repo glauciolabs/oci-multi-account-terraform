@@ -5,7 +5,7 @@
 set -e
 
 # Variables
-TERRAFORM_VERSION="1.12.2"
+TERRAFORM_VERSION="1.13.0"
 INSTALL_DIR="/usr/local/bin"
 
 # Check if Terraform is already installed

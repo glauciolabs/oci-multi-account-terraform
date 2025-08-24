@@ -94,20 +94,92 @@ variable "subnet_cidr" {
   default     = "10.10.1.0/24"
 }
 
+variable "public_subnet_cidr" {
+  type        = string
+  description = "CIDR block for the public NLB subnet (if created)."
+  default     = "10.10.0.0/24"
+}
+
+variable "assign_public_ip" {
+  type        = bool
+  description = "Controls whether to assign public IPs to instances (only if create_nlb is false)."
+  default     = true
+}
+
+
 variable "shared_volumes_config" {
   description = "Configuration for the shared block volumes."
   type = map(object({
     display_name = string
     size_in_gbs  = number
+    device       = string
   }))
   default = {
     "database_storage" = {
       display_name = "database-storage"
       size_in_gbs  = 50
+      device       = "/dev/oracleoci/oraclevdb"
     },
     "file_storage" = {
       display_name = "file-storage"
       size_in_gbs  = 56
+      device       = "/dev/oracleoci/oraclevdc"
     }
   }
+}
+
+variable "default_user" {
+  description = "Optional. Configuration for a default user to be created on the instance."
+  type = object({
+    name   = string
+    groups = list(string)
+    sudo   = string
+  })
+  default = null
+}
+
+variable "default_user_ssh_key" {
+  description = "The SSH public key for the default user."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "telegram_bot_token" {
+  type        = string
+  description = "Telegram Bot Token for notifications."
+  default     = ""
+  sensitive   = true
+}
+
+variable "telegram_chat_id" {
+  type        = string
+  description = "Telegram Chat ID for notifications."
+  default     = ""
+  sensitive   = true
+}
+
+variable "cf_warp_connector_secret" {
+  description = "The secret token for the Cloudflare WARP connector."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "create_nlb" {
+  type        = bool
+  description = "If true, a Network Load Balancer will be created for the instances."
+  default     = false
+}
+
+variable "nlb_listener_port" {
+  type        = number
+  description = "The port for the NLB listener."
+  default     = 80
+}
+
+variable "nlb_health_check_port" {
+  type        = number
+  description = "The port for the NLB health check."
+  default     = 22
 }
