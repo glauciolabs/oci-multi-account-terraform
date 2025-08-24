@@ -39,15 +39,8 @@ jobs:
       
       - name: Run Terraform for selected account
         run: |
-          echo "🔍 Decoding secret..."
           DECODED_JSON=$(echo '${{ secrets.OCI_ACCOUNTS_JSON }}' | base64 -d)
-          
-          # Debug: Show first 100 characters (hide sensitive data)
-          echo "🔍 Secret preview (first 100 chars):"
-          echo "$DECODED_JSON" | head -c 100
-          echo ""
-          
-          # Debug: Validate JSON structure
+                    
           echo "🔍 Validating JSON structure:"
           if echo "$DECODED_JSON" | jq empty 2>/dev/null; then
               echo "✅ JSON is valid"
@@ -57,12 +50,9 @@ jobs:
               exit 1
           fi
 
-          # Pass the FULL JSON structure
           echo "$DECODED_JSON" > /tmp/teste.json
       
-          pwd
-      
-          bash ./scripts/run.sh /tmp/teste.json ${{ github.event.inputs.account_number }} ${{ github.event.inputs.operation }} $(pwd)/accounts
+          bash ./scripts/deploy.sh /tmp/teste.json ${{ github.event.inputs.account_number }} ${{ github.event.inputs.operation }} $(pwd)/accounts
       
           rm -rf /tmp/teste.json
 
@@ -71,3 +61,6 @@ jobs:
         working-directory: ./accounts
         run: |
           rm -f private_key.pem
+          rm -rf .terraform
+          rm -rf .terraform.lock.hcl
+          rm -rf .terraform.tfstate
