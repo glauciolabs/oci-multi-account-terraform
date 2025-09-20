@@ -2,7 +2,12 @@
 
 terraform {
   required_version = "~> 1.13.0"
-
+  required_providers {
+    oci = {
+      source  = "oracle/oci"
+      version = "~> 7.19.0"
+    }
+  }
   backend "oci" {
     key = "terraform.tfstate"
   }
@@ -26,26 +31,31 @@ locals {
     telegram_chat_id         = var.telegram_chat_id
     cf_warp_connector_secret = var.cf_warp_connector_secret
     # Dados do usuário opcional
-    default_user_name        = try(var.default_user.name, "")
-    default_user_groups      = try(var.default_user.groups, [])
-    default_user_sudo        = try(var.default_user.sudo, "")
-    default_user_ssh_key     = var.default_user_ssh_key
+    default_user_name     = try(var.default_user.name, "")
+    default_user_groups   = try(var.default_user.groups, [])
+    default_user_sudo     = try(var.default_user.sudo, "")
+    default_user_ssh_key  = var.default_user_ssh_key
+    public_subnet_cidr    = var.public_subnet_cidr
+    nlb_listener_port     = var.nlb_listener_port
+    nlb_health_check_port = var.nlb_health_check_port
   }))
 }
 
 module "oci_network" {
-  source = "../modules/oci-network"
+  source         = "../modules/oci-network"
   compartment_id = var.compartment_ocid
   prefix         = var.prefix
   vcn_cidr       = var.vcn_cidr
 
-  create_public_subnet  = var.create_nlb || var.assign_public_ip
-  public_subnet_cidr    = var.public_subnet_cidr
+  create_public_subnet = var.create_nlb || var.assign_public_ip
+  public_subnet_cidr   = var.public_subnet_cidr
 
   create_private_subnet = var.create_nlb || !var.assign_public_ip
   private_subnet_cidr   = var.subnet_cidr
 
-  nlb_listener_port = var.create_nlb ? var.nlb_listener_port : null
+  create_nlb            = var.create_nlb
+  nlb_listener_port     = var.nlb_listener_port
+  nlb_health_check_port = var.nlb_health_check_port
 }
 
 module "oci_ampere_instance" {
@@ -96,12 +106,19 @@ resource "oci_core_volume_attachment" "shared_attachment" {
 }
 
 module "oci_nlb" {
-  count  = var.create_nlb ? 1 : 0
-  source = "../modules/oci-nlb"
-  subnet_id            = module.oci_network.nlb_subnet_id
-  compartment_id       = var.compartment_ocid
-  display_name_prefix  = var.prefix
-  listener_port        = var.nlb_listener_port
-  health_check_port    = var.nlb_health_check_port
-  backend_instance_map = module.oci_ampere_instance.instance_ids_map
+  count                       = var.create_nlb ? 1 : 0
+  source                      = "../modules/oci-nlb"
+  subnet_id                   = module.oci_network.nlb_subnet_id
+  compartment_id              = var.compartment_ocid
+  display_name_prefix         = var.prefix
+  listener_port               = var.nlb_listener_port
+  backend_instance_map        = module.oci_ampere_instance.instance_ids_map
+  health_check_port           = var.nlb_health_check_port
+  health_check_protocol       = var.nlb_health_check_protocol
+  health_check_path           = var.nlb_health_check_path
+  health_check_return_code    = var.nlb_health_check_return_code
+  health_check_response_regex = var.nlb_health_check_response_regex
+  health_check_interval       = var.nlb_health_check_interval
+  health_check_timeout        = var.nlb_health_check_timeout
+  health_check_retries        = var.nlb_health_check_retries
 }

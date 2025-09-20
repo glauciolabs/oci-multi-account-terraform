@@ -42,6 +42,9 @@ runcmd:
 
   # Whitelist OCFS ports
   - 'firewall-cmd --add-port=7777/tcp --add-port=7777/udp --permanent; sudo firewall-cmd --complete-reload'
+  - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${public_subnet_cidr} port port=${nlb_health_check_port} protocol=tcp accept" --permanent'
+  - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${public_subnet_cidr} port port=${nlb_listener_port} protocol=tcp accept" --permanent'
+  - 'firewall-cmd --reload'
 
   # Install CF WARP Client
   - 'yum update -y && yum install -y cloudflare-warp'

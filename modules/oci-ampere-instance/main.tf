@@ -1,5 +1,15 @@
 # modules/oci-ampere-instance/main.tf
 
+terraform {
+  required_version = ">= 1.13.0"
+  required_providers {
+    oci = {
+      source  = "oracle/oci"
+      version = ">= 7.19.0"
+    }
+  }
+}
+
 resource "oci_core_instance" "ampere_instance" {
   count               = var.instance_count
   availability_domain = var.availability_domain
@@ -7,7 +17,7 @@ resource "oci_core_instance" "ampere_instance" {
   shape               = var.instance_shape
   display_name        = "${var.instance_prefix}-${count.index + 1}"
 
-    shape_config {
+  shape_config {
     memory_in_gbs = var.instance_memory_gb
     ocpus         = var.instance_ocpus
   }
@@ -32,8 +42,8 @@ resource "oci_core_instance" "ampere_instance" {
   }
 
   create_vnic_details {
-    subnet_id        = var.subnet_id
-    assign_public_ip = var.assign_public_ip
+    subnet_id                 = var.subnet_id
+    assign_public_ip          = var.assign_public_ip
     assign_private_dns_record = true
   }
 
