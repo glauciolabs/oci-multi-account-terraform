@@ -14,6 +14,16 @@ fi
 
 echo "🚀 Executing terraform $ACTION for account $ACCOUNT_ID"
 
+function clean_files() {
+  echo "Cleaning files..."
+  sleep 3
+  rm -f account.auto.tfvars.json
+  rm -rf private_key.pem
+  rm -rf .terraform
+  rm -rf terraform.tfstate
+  rm -rf .terraform.lock.hcl
+}
+
 cd "$WORK_DIR"
 
 ACCOUNT_JSON=$(jq --arg account_id "$ACCOUNT_ID" '. | .[$account_id]' "$JSON_FILE")
@@ -31,17 +41,25 @@ echo "📝 Generating terraform variables file..."
 
 echo "$ACCOUNT_JSON" | jq '
   .ssh_key = .ssh_public_key |
-  .default_user_ssh_key = .ssh_public_key |        # adiciona a chave pública também para o usuário do cloud-init
+  .default_user_ssh_key = .ssh_public_key |
   .shared_volumes_config = (
     [(.block_volumes // [])[] | {key: .display_name | sub("-"; "_"; "g"), value: {display_name, size_in_gbs, device}}]
     | from_entries
   ) |
-  # manter variáveis sensíveis/novas
   .telegram_bot_token = .telegram_bot_token |
   .telegram_chat_id = .telegram_chat_id |
   .cf_warp_connector_secret = .cf_warp_connector_secret |
+  
+  .nlb_health_check_protocol = .nlb_health_check_protocol |
+  .nlb_health_check_path = .nlb_health_check_path |
+  .nlb_health_check_return_code = .nlb_health_check_return_code |
+  .nlb_health_check_response_regex = .nlb_health_check_response_regex |
+  .nlb_health_check_interval = .nlb_health_check_interval |
+  .nlb_health_check_timeout = .nlb_health_check_timeout |
+  .nlb_health_check_retries = .nlb_health_check_retries |
+  
   del(.account_name, .availability_domain, .private_key, .ssh_public_key, .block_volumes, .tf_state_bucket_name, .namespace)
-' > account.auto.tfvars.json
+' > account.auto.tfvars.json || clean_files
 
 PRIVATE_KEY=$(echo "$ACCOUNT_JSON" | jq -r ".private_key")
 echo "$PRIVATE_KEY" > private_key.pem
@@ -54,7 +72,7 @@ terraform init -reconfigure \
   -backend-config="tenancy_ocid=$(echo "$ACCOUNT_JSON" | jq -r '.tenancy_ocid')" \
   -backend-config="user_ocid=$(echo "$ACCOUNT_JSON" | jq -r '.user_ocid')" \
   -backend-config="fingerprint=$(echo "$ACCOUNT_JSON" | jq -r '.fingerprint')" \
-  -backend-config="private_key_path=$(pwd)/private_key.pem"
+  -backend-config="private_key_path=$(pwd)/private_key.pem" || clean_files
 
 AUTO_APPROVE=""
 if [[ "$ACTION" == "apply" || "$ACTION" == "destroy" ]]; then
@@ -65,11 +83,7 @@ terraform "$ACTION" $AUTO_APPROVE \
     -var="private_key_path=$(pwd)/private_key.pem" \
     -var="telegram_bot_token=${TELEGRAM_BOT_TOKEN}" \
     -var="telegram_chat_id=${TELEGRAM_CHAT_ID}" \
-    -var="cf_warp_connector_secret=${CF_WARP_CONNECTOR_SECRET}"
+    -var="cf_warp_connector_secret=${CF_WARP_CONNECTOR_SECRET}" || clean_files
 
 echo "✅ Terraform $ACTION completed successfully!"
-rm -f account.auto.tfvars.json
-rm -rf private_key.pem
-rm -rf .terraform
-rm -rf terraform.tfstate
-rm -rf .terraform.lock.hcl
+clean_files

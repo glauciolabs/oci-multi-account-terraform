@@ -11,7 +11,6 @@ on:
           - '1'
           - '2'
           - '3'
-
       operation:
         description: "terraform action"
         required: true
@@ -22,45 +21,113 @@ on:
           - 'destroy'
 
 jobs:
-  terraform:
+  terraform-lint:
     runs-on: ubuntu-latest
+    name: 🔍 Lint & Validate
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Cache TFLint plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.tflint.d/plugins
+          key: ${{ runner.os }}-tflint-${{ hashFiles('.tflint.hcl') }}
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v5
+        with:
+          tflint_version: v0.59.1
+
+      - name: Show TFLint version
+        run: tflint --version
+
+      - name: Init TFLint
+        run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Run TFLint
+        run: |
+          echo "🔍 Running TFLint recursive scan..."
+          tflint --recursive --format compact
+          
+          echo "📊 TFLint Summary:"
+          tflint --recursive --format json > tflint-results.json || true
+          
+          if [ -f tflint-results.json ]; then
+            ISSUES=$(jq '.issues | length' tflint-results.json)
+            echo "Total issues found: $ISSUES"
+            
+            if [ "$ISSUES" -gt 0 ]; then
+              echo "::warning::TFLint found $ISSUES issues. Check output above for details."
+            else
+              echo "✅ No TFLint issues found!"
+            fi
+          fi
+
+      - name: Install Terraform
+        run: sudo bash ./scripts/install-terraform.sh
+
+      - name: Terraform Format Check
+        run: |
+          if ! terraform fmt -check -recursive; then
+            echo "::error::Terraform files are not formatted correctly!"
+            exit 1
+          else
+            echo "✅ All Terraform files are properly formatted!"
+          fi
+
+      - name: Terraform Validate
+        run: |
+          for dir in accounts modules/*/; do
+            if [ -f "$dir/main.tf" ] || [ -f "$dir/variables.tf" ]; then
+              echo "Validating: $dir"
+              cd "$dir"
+              terraform init -backend=false
+              terraform validate
+              cd - > /dev/null
+            fi
+          done
+          echo "✅ All Terraform configurations are valid!"
+
+  terraform-deploy:
+    runs-on: ubuntu-latest
+    name: Terraform ${{ github.event.inputs.operation }} account ${{ github.event.inputs.account_number }}
+    needs: terraform-lint
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install Terraform
-        run: |
-          sudo bash ./scripts/install-terraform.sh
+        run: sudo bash ./scripts/install-terraform.sh
       
       - name: Run Terraform for selected account
         run: |
           DECODED_JSON=$(echo '${{ secrets.OCI_ACCOUNTS_JSON }}' | base64 -d)
           TEMP_JSON_PATH="${{ runner.temp }}/accounts.json"
 
-          echo "Creating temporary config file at: $TEMP_JSON_PATH"
-
           echo "🔍 Validating JSON structure:"
           if echo "$DECODED_JSON" | jq empty 2>/dev/null; then
               echo "✅ JSON is valid"
           else
-              echo "❌ JSON is invalid - showing errors:"
+              echo "❌ JSON is invalid"
               echo "$DECODED_JSON" | jq empty
               exit 1
           fi
 
           echo "$DECODED_JSON" > "$TEMP_JSON_PATH"
-      
           bash ./scripts/deploy.sh "$TEMP_JSON_PATH" ${{ github.event.inputs.account_number }} ${{ github.event.inputs.operation }} $(pwd)/accounts
-      
           rm -rf "$TEMP_JSON_PATH"
 
       - name: Clean up Terraform sensitive files
         if: always()
         working-directory: ./accounts
         run: |
-          echo "🧹 Final cleanup of sensitive files from the workspace..."
+          echo "🧹 Final cleanup..."
           rm -f private_key.pem
           rm -rf .terraform
           rm -rf .terraform.lock.hcl
-          rm -rf .terraform.tfstate
+          rm -rf .terraform

@@ -39,8 +39,20 @@ variable "private_subnet_cidr" {
   default     = null
 }
 
+variable "create_nlb" {
+  type        = bool
+  description = "Whether to create NLB-specific security rules"
+  default     = false
+}
+
 variable "nlb_listener_port" {
   type        = number
-  description = "If provided, creates an ingress rule for the NLB listener port."
+  description = "NLB listener port"
+  default     = null
+}
+
+variable "nlb_health_check_port" {
+  type        = number
+  description = "NLB health check port"
   default     = null
 }

@@ -155,7 +155,6 @@ variable "telegram_bot_token" {
 variable "telegram_chat_id" {
   type        = string
   description = "Telegram Chat ID for notifications."
-  default     = ""
   sensitive   = true
 }
 
@@ -163,23 +162,54 @@ variable "cf_warp_connector_secret" {
   description = "The secret token for the Cloudflare WARP connector."
   type        = string
   sensitive   = true
-  default     = ""
 }
 
 variable "create_nlb" {
   type        = bool
   description = "If true, a Network Load Balancer will be created for the instances."
-  default     = false
 }
 
 variable "nlb_listener_port" {
   type        = number
   description = "The port for the NLB listener."
-  default     = 80
 }
 
 variable "nlb_health_check_port" {
   type        = number
   description = "The port for the NLB health check."
-  default     = 22
+}
+
+variable "nlb_health_check_protocol" {
+  type        = string
+  description = "Protocol for NLB health check (TCP, HTTP, HTTPS)"
+}
+
+variable "nlb_health_check_path" {
+  type        = string
+  description = "Path for HTTP/HTTPS health check"
+}
+
+variable "nlb_health_check_return_code" {
+  type        = number
+  description = "Expected return code for HTTP/HTTPS health check"
+}
+
+variable "nlb_health_check_response_regex" {
+  type        = string
+  description = "Response body regex for HTTP/HTTPS health check"
+}
+
+variable "nlb_health_check_interval" {
+  type        = number
+  description = "Health check interval in milliseconds"
+}
+
+variable "nlb_health_check_timeout" {
+  type        = number
+  description = "Health check timeout in milliseconds"
+}
+
+variable "nlb_health_check_retries" {
+  type        = number
+  description = "Number of health check retries"
 }
