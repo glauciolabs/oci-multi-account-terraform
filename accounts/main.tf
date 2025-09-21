@@ -36,6 +36,7 @@ locals {
     default_user_sudo     = try(var.default_user.sudo, "")
     default_user_ssh_key  = var.default_user_ssh_key
     public_subnet_cidr    = var.public_subnet_cidr
+    subnet_cidr           = var.subnet_cidr
     nlb_listener_port     = var.nlb_listener_port
     nlb_health_check_port = var.nlb_health_check_port
   }))

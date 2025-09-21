@@ -85,19 +85,16 @@ variable "ad_number" {
 variable "vcn_cidr" {
   type        = string
   description = "VCN CIDR block"
-  default     = "10.10.0.0/16"
 }
 
 variable "subnet_cidr" {
   type        = string
   description = "Subnet CIDR block"
-  default     = "10.10.1.0/24"
 }
 
 variable "public_subnet_cidr" {
   type        = string
   description = "CIDR block for the public NLB subnet (if created)."
-  default     = "10.10.0.0/24"
 }
 
 variable "assign_public_ip" {
