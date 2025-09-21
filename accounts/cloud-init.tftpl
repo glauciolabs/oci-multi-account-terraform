@@ -35,19 +35,24 @@ runcmd:
 
   # Enable EPEL repository
   - 'yum-config-manager --enable ol9_developer_EPEL'
-  - 'dnf check-update'
 
   # Add Cloudflare repository
   - 'curl -fsSL https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | tee /etc/yum.repos.d/cloudflare-warp.repo'
 
   # Whitelist OCFS ports
-  - 'firewall-cmd --add-port=7777/tcp --add-port=7777/udp --permanent; sudo firewall-cmd --complete-reload'
-  - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${public_subnet_cidr} port port=${nlb_health_check_port} protocol=tcp accept" --permanent'
-  - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${public_subnet_cidr} port port=${nlb_listener_port} protocol=tcp accept" --permanent'
-  - 'firewall-cmd --reload'
+  - 'firewall-cmd --add-port=7777/tcp --add-port=7777/udp --permanent'
+  - 'firewall-cmd --add-port=30000-32767/tcp --permanent'
+  - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${public_subnet_cidr} accept" --permanent'
+  - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${subnet_cidr} accept" --permanent'
+  - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=100.96.0.0/24 port port=6443 protocol=tcp accept" --permanent'
+  - 'sudo firewall-cmd --add-service=https --permanent'
+  - 'sudo firewall-cmd --add-service=http --permanent'
 
+  - 'sudo firewall-cmd --complete-reload'
+
+  - 'dnf check-update'
   # Install CF WARP Client
-  - 'yum update -y && yum install -y cloudflare-warp'
+  - 'yum install -y cloudflare-warp'
   
   # Enable IP forwarding
   - 'sysctl -w net.ipv4.ip_forward=1'
