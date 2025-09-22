@@ -65,8 +65,8 @@ resource "oci_core_security_list" "private_security_list" {
   }
 
   ingress_security_rules {
-    protocol = "6"
-    source   = var.vcn_cidr
+    protocol    = "6"
+    source      = var.vcn_cidr
     description = "Allow OCFS2 heartbeat traffic between instances"
     tcp_options {
       min = 7777
@@ -102,8 +102,8 @@ resource "oci_core_security_list" "private_security_list" {
   }
 
   ingress_security_rules {
-    protocol = "6"
-    source   = "0.0.0.0/0"
+    protocol    = "6"
+    source      = "0.0.0.0/0"
     description = "Allow HTTP traffic"
     tcp_options {
       min = 80
@@ -112,8 +112,8 @@ resource "oci_core_security_list" "private_security_list" {
   }
 
   ingress_security_rules {
-    protocol = "6"
-    source   = "0.0.0.0/0"
+    protocol    = "6"
+    source      = "0.0.0.0/0"
     description = "Allow HTTPS traffic"
     tcp_options {
       min = 443
