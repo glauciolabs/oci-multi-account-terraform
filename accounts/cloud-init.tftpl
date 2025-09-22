@@ -95,3 +95,16 @@ runcmd:
       --data-urlencode "text=$MESSAGE" \
       -o /dev/null
     %{~ endif ~}
+  
+
+  - |
+    MESSAGE="⚠️ upgrading os..."
+    %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
+    curl -s --fail -X POST \
+      "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
+      --data-urlencode "chat_id=${telegram_chat_id}" \
+      --data-urlencode "text=$MESSAGE" \
+      -o /dev/null
+    %{~ endif ~}
+
+  - 'dnf upgrade -y'
