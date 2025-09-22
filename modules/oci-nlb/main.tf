@@ -21,7 +21,7 @@ resource "oci_network_load_balancer_backend_set" "backend_set" {
   network_load_balancer_id = oci_network_load_balancer_network_load_balancer.nlb.id
   name                     = "${var.display_name_prefix}-bset"
   policy                   = "FIVE_TUPLE"
-  is_preserve_source       = true
+  is_preserve_source       = false
 
   health_checker {
     protocol           = var.health_check_protocol

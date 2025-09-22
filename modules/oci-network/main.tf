@@ -79,7 +79,7 @@ resource "oci_core_security_list" "security_list" {
   count          = var.create_public_subnet || var.create_private_subnet ? 1 : 0
   compartment_id = var.compartment_id
   vcn_id         = oci_core_vcn.vcn.id
-  display_name   = "${var.prefix}-security-list"
+  display_name   = "${var.prefix}-private-security-list"
 
   egress_security_rules {
     destination = "0.0.0.0/0"
