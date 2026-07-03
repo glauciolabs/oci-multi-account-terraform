@@ -42,6 +42,7 @@ locals {
 }
 
 module "oci_network" {
+  count          = var.existing_subnet_id != "" ? 0 : 1
   source         = "../modules/oci-network"
   compartment_id = var.compartment_ocid
   prefix         = var.prefix
@@ -60,7 +61,7 @@ module "oci_network" {
 
 module "oci_ampere_instance" {
   source                  = "../modules/oci-ampere-instance"
-  subnet_id               = module.oci_network.instance_subnet_id
+  subnet_id               = var.existing_subnet_id != "" ? var.existing_subnet_id : module.oci_network[0].instance_subnet_id
   assign_public_ip        = var.create_nlb ? false : var.assign_public_ip
   compartment_id          = var.compartment_ocid
   availability_domain     = data.oci_identity_availability_domains.ads.availability_domains[var.ad_number - 1].name
@@ -108,7 +109,7 @@ resource "oci_core_volume_attachment" "shared_attachment" {
 module "oci_nlb" {
   count                       = var.create_nlb ? 1 : 0
   source                      = "../modules/oci-nlb"
-  subnet_id                   = module.oci_network.nlb_subnet_id
+  subnet_id                   = var.existing_subnet_id != "" ? var.existing_subnet_id : module.oci_network[0].nlb_subnet_id
   compartment_id              = var.compartment_ocid
   display_name_prefix         = var.prefix
   listener_port               = var.nlb_listener_port
