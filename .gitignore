@@ -40,3 +40,7 @@ accounts/account1/.terraform.lock.hcl
 accounts/private_key.pem
 accounts/.terraform.lock.hcl
 .DS_Store
+
+# Secrets
+secret.json
+accounts_config.json
