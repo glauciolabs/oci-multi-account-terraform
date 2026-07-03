@@ -223,3 +223,9 @@ variable "nlb_health_check_retries" {
   description = "Number of health check retries"
   default     = 3
 }
+
+variable "existing_subnet_id" {
+  type        = string
+  description = "OCID of an existing subnet to deploy instances into (bypasses network creation)"
+  default     = ""
+}
