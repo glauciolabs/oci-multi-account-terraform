@@ -44,3 +44,7 @@ accounts/.terraform.lock.hcl
 # Secrets
 secret.json
 accounts_config.json
+secret-oci.json
+secrets-ubutu.json
+base64-oci.txt
+*.json

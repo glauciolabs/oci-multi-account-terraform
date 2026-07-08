@@ -3,11 +3,8 @@
 package_update: true
 packages:
   - curl
-  - iproute2
-  - ocfs2-tools
-  - lsb-release
-  - gnupg
-  - iptables-persistent
+  - iproute
+  - iptables-services
 
 users:
 %{ if length(default_user_name) > 0 ~}
@@ -26,7 +23,7 @@ users:
 runcmd:
 
   - |
-    MESSAGE="⚠️ Host: $(hostname) | Starting provisioning..."
+    MESSAGE="⚠️ Host: $(hostname) | Starting provisioning (Oracle Linux 10)..."
     %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
     curl -s --fail -X POST \
       "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
@@ -35,11 +32,18 @@ runcmd:
       -o /dev/null
     %{~ endif ~}
 
-  # Add Cloudflare repository & GPG key
-  - 'mkdir -p --mode=0755 /usr/share/keyrings'
-  - 'curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --dearmor --yes -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg'
-  - 'echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflare-client.list'
-  
+  # Add Cloudflare WARP RPM repository
+  - |
+    rpm --import https://pkg.cloudflareclient.com/pubkey.gpg
+    cat > /etc/yum.repos.d/cloudflare-warp.repo <<'EOF'
+    [cloudflare-warp]
+    name=Cloudflare WARP Client
+    baseurl=https://pkg.cloudflareclient.com/rpm
+    enabled=1
+    gpgcheck=1
+    gpgkey=https://pkg.cloudflareclient.com/pubkey.gpg
+    EOF
+
   - |
     MESSAGE="⚠️ Host: $(hostname) | Repositories configured. Installing cloudflare-warp..."
     %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
@@ -50,17 +54,16 @@ runcmd:
       -o /dev/null
     %{~ endif ~}
 
-  - 'apt-get update'
-
-  # Whitelist ports in iptables (OCI Ubuntu default firewall)
+  # Whitelist ports in iptables
   - 'iptables -I INPUT -p tcp --dport 7777 -j ACCEPT'
   - 'iptables -I INPUT -p udp --dport 7777 -j ACCEPT'
   - 'iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_health_check_port} -j ACCEPT'
   - 'iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_listener_port} -j ACCEPT'
-  - 'netfilter-persistent save'
+  - 'iptables-save > /etc/sysconfig/iptables'
+  - 'systemctl enable --now iptables'
 
   # Install CF WARP Client
-  - 'apt-get install -y cloudflare-warp'
+  - 'dnf install -y cloudflare-warp'
   
   - |
     MESSAGE="⚠️ Host: $(hostname) | cloudflare-warp installed. Starting warp-svc..."
