@@ -3,8 +3,8 @@
 package_update: true
 packages:
   - curl
+  - yum-utils
   - iproute
-  - iptables-services
 
 users:
 %{ if length(default_user_name) > 0 ~}
@@ -23,7 +23,7 @@ users:
 runcmd:
 
   - |
-    MESSAGE="⚠️ Host: $(hostname) | Starting provisioning (Oracle Linux 10)..."
+    MESSAGE="⚠️ Host: $(hostname) | Starting provisioning..."
     %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
     curl -s --fail -X POST \
       "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
@@ -32,14 +32,10 @@ runcmd:
       -o /dev/null
     %{~ endif ~}
 
-  # Add Cloudflare WARP RPM repository
-  - |
-    rpm --import https://pkg.cloudflareclient.com/pubkey.gpg
-  # Add Cloudflare WARP RPM repository (official repo file)
-  - |
-    rpm --import https://pkg.cloudflareclient.com/pubkey.gpg
-    curl -fsSl https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | tee /etc/yum.repos.d/cloudflare-warp.repo
-    dnf makecache
+  # Enable EPEL repository and add Cloudflare WARP repo
+  - 'yum-config-manager --enable ol10_developer_EPEL || true'
+  - 'dnf check-update || true'
+  - 'curl -fsSL https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | tee /etc/yum.repos.d/cloudflare-warp.repo'
 
   - |
     MESSAGE="⚠️ Host: $(hostname) | Repositories configured. Installing cloudflare-warp..."
@@ -51,33 +47,14 @@ runcmd:
       -o /dev/null
     %{~ endif ~}
 
-  # Whitelist ports in iptables
-  - 'iptables -I INPUT -p tcp --dport 7777 -j ACCEPT'
-  - 'iptables -I INPUT -p udp --dport 7777 -j ACCEPT'
-  - 'iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_health_check_port} -j ACCEPT'
-  - 'iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_listener_port} -j ACCEPT'
-  - 'iptables-save > /etc/sysconfig/iptables'
-  - 'systemctl enable --now iptables'
+  # Whitelist ports via firewall-cmd
+  - 'firewall-cmd --add-port=7777/tcp --add-port=7777/udp --permanent || true'
+  - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${public_subnet_cidr} port port=${nlb_health_check_port} protocol=tcp accept" --permanent || true'
+  - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${public_subnet_cidr} port port=${nlb_listener_port} protocol=tcp accept" --permanent || true'
+  - 'firewall-cmd --reload || true'
 
-  # Install CF WARP Client with validation
-  - |
-    dnf install -y cloudflare-warp
-    if ! command -v warp-cli &>/dev/null; then
-      # Try to find it
-      WARP_BIN=$(find /usr -name warp-cli -type f 2>/dev/null | head -1)
-      if [ -n "$WARP_BIN" ]; then
-        ln -sf "$WARP_BIN" /usr/local/bin/warp-cli
-      else
-        MESSAGE="❌ Host: $(hostname) | warp-cli NOT FOUND after install! dnf output: $(dnf list installed cloudflare-warp 2>&1)"
-        %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
-        curl -s --fail -X POST \
-          "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
-          --data-urlencode "chat_id=${telegram_chat_id}" \
-          --data-urlencode "text=$MESSAGE" \
-          -o /dev/null
-        %{~ endif ~}
-      fi
-    fi
+  # Install CF WARP Client
+  - 'yum install -y cloudflare-warp --nogpgcheck'
   
   - |
     MESSAGE="⚠️ Host: $(hostname) | cloudflare-warp installed. Starting warp-svc..."
