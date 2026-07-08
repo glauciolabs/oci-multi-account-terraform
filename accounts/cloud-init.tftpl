@@ -32,9 +32,13 @@ runcmd:
       -o /dev/null
     %{~ endif ~}
 
-  # Enable EPEL repository and add Cloudflare WARP repo
+  # Install and enable EPEL (required by Cloudflare WARP on RHEL 9+/10)
+  - 'dnf install -y oracle-epel-release-el10 || dnf install -y epel-release || true'
   - 'yum-config-manager --enable ol10_developer_EPEL || true'
   - 'dnf check-update || true'
+
+  # Import Cloudflare GPG key and add WARP repo
+  - 'rpm --import https://pkg.cloudflareclient.com/pubkey.gpg'
   - 'curl -fsSL https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | tee /etc/yum.repos.d/cloudflare-warp.repo'
 
   - |
@@ -53,8 +57,9 @@ runcmd:
   - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${public_subnet_cidr} port port=${nlb_listener_port} protocol=tcp accept" --permanent || true'
   - 'firewall-cmd --reload || true'
 
-  # Install CF WARP Client
-  - 'yum install -y cloudflare-warp --nogpgcheck'
+  # Update repos and install CF WARP Client
+  - 'yum update -y'
+  - 'yum install -y cloudflare-warp'
   
   - |
     MESSAGE="⚠️ Host: $(hostname) | cloudflare-warp installed. Starting warp-svc..."
