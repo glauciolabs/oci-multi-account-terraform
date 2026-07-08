@@ -35,14 +35,11 @@ runcmd:
   # Add Cloudflare WARP RPM repository
   - |
     rpm --import https://pkg.cloudflareclient.com/pubkey.gpg
-    cat > /etc/yum.repos.d/cloudflare-warp.repo <<'EOF'
-    [cloudflare-warp]
-    name=Cloudflare WARP Client
-    baseurl=https://pkg.cloudflareclient.com/rpm
-    enabled=1
-    gpgcheck=1
-    gpgkey=https://pkg.cloudflareclient.com/pubkey.gpg
-    EOF
+  # Add Cloudflare WARP RPM repository (official repo file)
+  - |
+    rpm --import https://pkg.cloudflareclient.com/pubkey.gpg
+    curl -fsSl https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | tee /etc/yum.repos.d/cloudflare-warp.repo
+    dnf makecache
 
   - |
     MESSAGE="⚠️ Host: $(hostname) | Repositories configured. Installing cloudflare-warp..."
@@ -62,8 +59,25 @@ runcmd:
   - 'iptables-save > /etc/sysconfig/iptables'
   - 'systemctl enable --now iptables'
 
-  # Install CF WARP Client
-  - 'dnf install -y cloudflare-warp'
+  # Install CF WARP Client with validation
+  - |
+    dnf install -y cloudflare-warp
+    if ! command -v warp-cli &>/dev/null; then
+      # Try to find it
+      WARP_BIN=$(find /usr -name warp-cli -type f 2>/dev/null | head -1)
+      if [ -n "$WARP_BIN" ]; then
+        ln -sf "$WARP_BIN" /usr/local/bin/warp-cli
+      else
+        MESSAGE="❌ Host: $(hostname) | warp-cli NOT FOUND after install! dnf output: $(dnf list installed cloudflare-warp 2>&1)"
+        %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
+        curl -s --fail -X POST \
+          "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
+          --data-urlencode "chat_id=${telegram_chat_id}" \
+          --data-urlencode "text=$MESSAGE" \
+          -o /dev/null
+        %{~ endif ~}
+      fi
+    fi
   
   - |
     MESSAGE="⚠️ Host: $(hostname) | cloudflare-warp installed. Starting warp-svc..."
