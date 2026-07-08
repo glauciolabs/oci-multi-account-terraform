@@ -3,7 +3,6 @@
 package_update: true
 packages:
   - curl
-  - yum-utils
   - iproute
 
 users:
@@ -32,17 +31,11 @@ runcmd:
       -o /dev/null
     %{~ endif ~}
 
-  # Install and enable EPEL (required by Cloudflare WARP on RHEL 9+/10)
-  - 'dnf install -y oracle-epel-release-el10 || dnf install -y epel-release || true'
-  - 'yum-config-manager --enable ol10_developer_EPEL || true'
-  - 'dnf check-update || true'
-
-  # Import Cloudflare GPG key and add WARP repo
-  - 'rpm --import https://pkg.cloudflareclient.com/pubkey.gpg'
-  - 'curl -fsSL https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | tee /etc/yum.repos.d/cloudflare-warp.repo'
+  # Install Tailscale via official script (works on any distro)
+  - 'curl -fsSL https://tailscale.com/install.sh | sh'
 
   - |
-    MESSAGE="⚠️ Host: $(hostname) | Repositories configured. Installing cloudflare-warp..."
+    MESSAGE="⚠️ Host: $(hostname) | Tailscale installed. Starting tailscaled..."
     %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
     curl -s --fail -X POST \
       "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
@@ -57,24 +50,6 @@ runcmd:
   - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${public_subnet_cidr} port port=${nlb_listener_port} protocol=tcp accept" --permanent || true'
   - 'firewall-cmd --reload || true'
 
-  # Update repos and install CF WARP Client
-  - 'yum update -y'
-  - 'yum install -y cloudflare-warp'
-  
-  - |
-    MESSAGE="⚠️ Host: $(hostname) | cloudflare-warp installed. Starting warp-svc..."
-    %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
-    curl -s --fail -X POST \
-      "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
-      --data-urlencode "chat_id=${telegram_chat_id}" \
-      --data-urlencode "text=$MESSAGE" \
-      -o /dev/null
-    %{~ endif ~}
-
-  # Start warp-svc and wait
-  - 'systemctl enable --now warp-svc'
-  - 'sleep 8'
-  
   # Enable IP forwarding
   - 'sysctl -w net.ipv4.ip_forward=1'
   - |
@@ -82,8 +57,12 @@ runcmd:
       echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf && sysctl -p
     fi
 
+  # Start tailscaled and authenticate
+  - 'systemctl enable --now tailscaled'
+  - 'sleep 5'
+
   - |
-    MESSAGE="⚠️ Host: $(hostname) | warp-svc started. Registering connector..."
+    MESSAGE="⚠️ Host: $(hostname) | tailscaled started. Authenticating..."
     %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
     curl -s --fail -X POST \
       "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
@@ -92,48 +71,30 @@ runcmd:
       -o /dev/null
     %{~ endif ~}
 
-  - 'warp-cli --accept-tos registration delete || true'
-  - 'warp-cli --accept-tos connector new ${cf_warp_connector_secret}'
-  
-  - |
-    MESSAGE="⚠️ Host: $(hostname) | Connector registered. Connecting..."
-    %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
-    curl -s --fail -X POST \
-      "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
-      --data-urlencode "chat_id=${telegram_chat_id}" \
-      --data-urlencode "text=$MESSAGE" \
-      -o /dev/null
-    %{~ endif ~}
+  - 'tailscale up --authkey=${cf_warp_connector_secret} --ssh --accept-routes'
 
-  - 'warp-cli --accept-tos connect'
-  
-  - 'sleep 40'
+  - 'sleep 10'
   
   - |
     #!/bin/bash
     
-    # 1. Try to find the interface dynamically
+    # 1. Try to find the Tailscale interface
     IFACE=""
-    for name in CloudflareWARP warp0 wgcf; do
+    for name in tailscale0 ts0; do
       if ip link show "$name" >/dev/null 2>&1; then
         IFACE="$name"
         break
       fi
     done
     
-    # Fallback search if not found
+    # Fallback search
     if [[ -z "$IFACE" ]]; then
-      IFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -E -i 'warp|cloudflare|wgcf' | head -n 1)
-    fi
-    
-    # Ultimate fallback
-    if [[ -z "$IFACE" ]]; then
-      IFACE=$(ip -o link show | awk -F': ' '/state UP/ {print $2}' | grep -v -E '^lo|^en|^eth|^docker|^br' | head -n 1)
+      IFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -E -i 'tailscale|ts' | head -n 1)
     fi
     
     # Debug log
     {
-      echo "=== WARP Debug Info ==="
+      echo "=== Tailscale Debug Info ==="
       date
       echo "--- IP Link ---"
       ip link
@@ -141,28 +102,26 @@ runcmd:
       ip addr
       echo "--- Route ---"
       ip route
-      echo "--- Warp Status ---"
-      warp-cli --accept-tos status
-      echo "--- Warp Settings ---"
-      warp-cli --accept-tos settings
-    } > /var/log/warp_debug.log 2>&1
+      echo "--- Tailscale Status ---"
+      tailscale status
+      echo "--- Tailscale IP ---"
+      tailscale ip -4
+    } > /var/log/tailscale_debug.log 2>&1
     
     # 2. Get IP and status information
+    TS_IP=$(tailscale ip -4 2>/dev/null || echo "N/A")
+    TS_STATUS=$(tailscale status --self --json 2>/dev/null | grep -o '"Online":true' && echo "Connected" || echo "Disconnected")
+    
     if [[ -n "$IFACE" ]]; then
-      WARP_IP=$(ip -4 addr show "$IFACE" | awk '/inet /{print $2}' | cut -d/ -f1 || echo "N/A")
-      [[ -z "$WARP_IP" ]] && WARP_IP="No IP"
-      WARP_STATUS_MSG="Interface: $IFACE | IP: $WARP_IP"
+      IFACE_IP=$(ip -4 addr show "$IFACE" | awk '/inet /{print $2}' | cut -d/ -f1 || echo "N/A")
+      STATUS_MSG="Interface: $IFACE | IP: $IFACE_IP | Tailscale IP: $TS_IP"
     else
-      # Let's list all active interfaces and their IPs to help debugging
       ALL_IFACES=$(ip -4 -o addr show | awk '{print $2":"$4}' | cut -d/ -f1 | tr '\n' ' ')
-      WARP_STATUS_MSG="⚠️ Cloudflare WARP interface not found. Active IPs: $ALL_IFACES"
+      STATUS_MSG="⚠️ Tailscale interface not found. Tailscale IP: $TS_IP | Active IPs: $ALL_IFACES"
     fi
     
-    # Get warp status
-    WARP_CLI_STATUS=$(warp-cli --accept-tos status | grep -i 'Status' | awk -F': ' '{print $2}' | xargs || echo "Unknown")
-    
     HOSTNAME=$(hostname)
-    MESSAGE="✅ Host: $HOSTNAME | WARP Status: $WARP_CLI_STATUS | WARP IP: $WARP_STATUS_MSG"
+    MESSAGE="✅ Host: $HOSTNAME | Tailscale: $TS_STATUS | $STATUS_MSG"
 
     %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
     curl -s --fail -X POST \
@@ -172,11 +131,11 @@ runcmd:
       -o /dev/null
     %{~ endif ~}
 
-    # If the setup fails (i.e. warp is not Connected, or interface is missing), send the debug log output to Telegram
-    if [[ "$WARP_CLI_STATUS" != *"Connected"* || -z "$IFACE" ]]; then
-      DEBUG_OUTPUT=$(head -n 50 /var/log/warp_debug.log)
+    # If the setup fails, send debug log to Telegram
+    if [[ "$TS_IP" == "N/A" || -z "$IFACE" ]]; then
+      DEBUG_OUTPUT=$(head -n 50 /var/log/tailscale_debug.log)
       TICKS='```'
-      ERROR_MESSAGE=$(printf "❌ Host %s WARP Connection Failed!\n%s\n%s\n%s" "$HOSTNAME" "$TICKS" "$DEBUG_OUTPUT" "$TICKS")
+      ERROR_MESSAGE=$(printf "❌ Host %s Tailscale Connection Failed!\n%s\n%s\n%s" "$HOSTNAME" "$TICKS" "$DEBUG_OUTPUT" "$TICKS")
       %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
       curl -s --fail -X POST \
         "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
