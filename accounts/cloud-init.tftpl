@@ -34,7 +34,7 @@ runcmd:
 
   # Install and enable EPEL (required by Cloudflare WARP on RHEL 9+/10)
   - 'dnf install -y oracle-epel-release-el10 || dnf install -y epel-release || dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm || true'
-  - 'yum-config-manager --enable ol10_developer_EPEL || dnf config-manager --set-enabled crb || true'
+  - 'yum-config-manager --enable ol10_developer_EPEL || dnf config-manager --set-enabled ol10_codeready_builder || dnf config-manager --set-enabled crb || true'
   - 'dnf check-update || true'
 
   # Import Cloudflare GPG key (with fix for older keys) and add WARP repo
