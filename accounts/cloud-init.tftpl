@@ -53,6 +53,7 @@ runcmd:
     %{~ endif ~}
 
   # Whitelist ports via firewall-cmd
+  - 'firewall-cmd --zone=trusted --add-interface=CloudflareWARP --permanent || true'
   - 'firewall-cmd --add-port=7777/tcp --add-port=7777/udp --permanent || true'
   - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${public_subnet_cidr} port port=${nlb_health_check_port} protocol=tcp accept" --permanent || true'
   - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${public_subnet_cidr} port port=${nlb_listener_port} protocol=tcp accept" --permanent || true'
