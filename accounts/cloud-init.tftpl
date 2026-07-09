@@ -59,11 +59,12 @@ runcmd:
   - 'firewall-cmd --reload || true'
 
   # Update repos and install CF WARP Client
-  - 'yum update -y'
-  - 'yum install -y cloudflare-warp'
-  
   - |
-    MESSAGE="⚠️ Host: $(hostname) | cloudflare-warp installed. Starting warp-svc..."
+    OUTPUT=$( (yum update -y && yum install -y cloudflare-warp) 2>&1 | tail -n 15 )
+    MESSAGE="⚠️ Host: $(hostname) | cloudflare-warp installed. Starting warp-svc...
+    \`\`\`
+    $OUTPUT
+    \`\`\`"
     %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
     curl -s --fail -X POST \
       "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
@@ -94,10 +95,12 @@ runcmd:
     %{~ endif ~}
 
   - 'warp-cli --accept-tos registration delete || true'
-  - 'warp-cli --accept-tos connector new ${cf_warp_connector_secret}'
-  
   - |
-    MESSAGE="⚠️ Host: $(hostname) | Connector registered. Connecting..."
+    OUTPUT=$(warp-cli --accept-tos connector new ${cf_warp_connector_secret} 2>&1)
+    MESSAGE="⚠️ Host: $(hostname) | Connector registered. Connecting...
+    \`\`\`
+    $OUTPUT
+    \`\`\`"
     %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
     curl -s --fail -X POST \
       "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
