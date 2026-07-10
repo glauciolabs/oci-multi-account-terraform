@@ -1,13 +1,6 @@
 #cloud-config
 
-package_update: true
-packages:
-  - curl
-  - iproute2
-  - ocfs2-tools
-  - lsb-release
-  - gnupg
-  - iptables-persistent
+# No top-level packages; installed dynamically in runcmd to support both Ubuntu/Debian and RedHat/EL10.
 
 users:
 %{ if length(default_user_name) > 0 ~}
@@ -35,11 +28,20 @@ runcmd:
       -o /dev/null
     %{~ endif ~}
 
-  # Add Cloudflare repository & GPG key
-  - 'mkdir -p --mode=0755 /usr/share/keyrings'
-  - 'curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --dearmor --yes -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg'
-  - 'echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflare-client.list'
-  
+  # Configure repositories and install packages (dynamic for Debian/Ubuntu and RedHat/EL10)
+  - |
+    if command -v apt-get &> /dev/null; then
+      mkdir -p --mode=0755 /usr/share/keyrings
+      curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --dearmor --yes -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+      echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflare-client.list
+      apt-get update
+      apt-get install -y curl iproute2 ocfs2-tools lsb-release gnupg iptables-persistent cloudflare-warp
+    elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
+      PKG_MANAGER=$(command -v dnf || command -v yum)
+      curl -fsSL https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | tee /etc/yum.repos.d/cloudflare-warp.repo
+      $PKG_MANAGER install -y --skip-broken --nobest cloudflare-warp curl iproute ocfs2-tools || true
+    fi
+
   - |
     MESSAGE="⚠️ Host: $(hostname) | Repositories configured. Installing cloudflare-warp..."
     %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
@@ -50,17 +52,29 @@ runcmd:
       -o /dev/null
     %{~ endif ~}
 
-  - 'apt-get update'
-
-  # Whitelist ports in iptables (OCI Ubuntu default firewall)
-  - 'iptables -I INPUT -p tcp --dport 7777 -j ACCEPT'
-  - 'iptables -I INPUT -p udp --dport 7777 -j ACCEPT'
-  - 'iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_health_check_port} -j ACCEPT'
-  - 'iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_listener_port} -j ACCEPT'
-  - 'netfilter-persistent save'
-
-  # Install CF WARP Client
-  - 'apt-get install -y cloudflare-warp'
+  # Configure firewall rules based on system capabilities
+  - |
+    if command -v apt-get &> /dev/null; then
+      iptables -I INPUT -p tcp --dport 7777 -j ACCEPT
+      iptables -I INPUT -p udp --dport 7777 -j ACCEPT
+      iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_health_check_port} -j ACCEPT
+      iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_listener_port} -j ACCEPT
+      netfilter-persistent save || true
+    elif command -v firewall-cmd &> /dev/null && systemctl is-active firewalld &> /dev/null; then
+      firewall-cmd --permanent --add-port=7777/tcp
+      firewall-cmd --permanent --add-port=7777/udp
+      firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="${public_subnet_cidr}" port port="${nlb_health_check_port}" protocol="tcp" accept'
+      firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="${public_subnet_cidr}" port port="${nlb_listener_port}" protocol="tcp" accept'
+      firewall-cmd --reload
+    else
+      iptables -I INPUT -p tcp --dport 7777 -j ACCEPT
+      iptables -I INPUT -p udp --dport 7777 -j ACCEPT
+      iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_health_check_port} -j ACCEPT
+      iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_listener_port} -j ACCEPT
+      if command -v iptables-save &> /dev/null; then
+        iptables-save > /etc/sysconfig/iptables || true
+      fi
+    fi
   
   - |
     MESSAGE="⚠️ Host: $(hostname) | cloudflare-warp installed. Starting warp-svc..."
