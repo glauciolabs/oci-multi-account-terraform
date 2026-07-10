@@ -10,17 +10,13 @@ users:
     shell: /bin/bash
     sudo: "${default_user_sudo}"
     lock_passwd: %{ if length(default_user_password) > 0 }false%{ else }true%{ endif }
+    %{ if length(default_user_password) > 0 ~}
+    passwd: "${default_user_password}"
+    %{ endif ~}
     ssh_authorized_keys:
       - ${default_user_ssh_key}
 %{ else ~}
   []
-%{ endif ~}
-
-%{ if length(default_user_password) > 0 ~}
-chpasswd:
-  expire: false
-  users:
-    - {name: ${default_user_name}, password: ${default_user_password}, type: text}
 %{ endif ~}
 
 runcmd:
