@@ -1,10 +1,6 @@
 #cloud-config
 
-package_update: true
-packages:
-  - curl
-  - yum-utils
-  - iproute
+# No top-level packages; installed dynamically in runcmd to support both Ubuntu/Debian and RedHat/EL10.
 
 users:
 %{ if length(default_user_name) > 0 ~}
@@ -32,15 +28,19 @@ runcmd:
       -o /dev/null
     %{~ endif ~}
 
-  # Install and enable EPEL (required by Cloudflare WARP on RHEL 9+/10)
-  - 'dnf install -y oracle-epel-release-el9 || dnf install -y epel-release || dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm || true'
-  - 'yum-config-manager --enable ol9_developer_EPEL || dnf config-manager --set-enabled crb || true'
-  - 'dnf check-update || true'
-
-  # Import Cloudflare GPG key (with fix for older keys) and add WARP repo
-  - 'rpm -e gpg-pubkey-61abda35-5e60803c || rpm -e "gpg-pubkey(4fa1c3ba-61abda35)" || true'
-  - 'rpm --import https://pkg.cloudflareclient.com/pubkey.gpg'
-  - 'curl -fsSL https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | tee /etc/yum.repos.d/cloudflare-warp.repo'
+  # Configure repositories and install packages (dynamic for Debian/Ubuntu and RedHat/EL10)
+  - |
+    if command -v apt-get &> /dev/null; then
+      mkdir -p --mode=0755 /usr/share/keyrings
+      curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --dearmor --yes -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+      echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflare-client.list
+      apt-get update
+      apt-get install -y curl iproute2 ocfs2-tools lsb-release gnupg iptables-persistent cloudflare-warp
+    elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
+      PKG_MANAGER=$(command -v dnf || command -v yum)
+      curl -fsSL https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | tee /etc/yum.repos.d/cloudflare-warp.repo
+      $PKG_MANAGER install -y --skip-broken --nobest cloudflare-warp curl iproute ocfs2-tools || true
+    fi
 
   - |
     MESSAGE="⚠️ Host: $(hostname) | Repositories configured. Installing cloudflare-warp..."
@@ -52,20 +52,32 @@ runcmd:
       -o /dev/null
     %{~ endif ~}
 
-  # Whitelist ports via firewall-cmd
-  - 'firewall-cmd --zone=trusted --add-interface=CloudflareWARP --permanent || true'
-  - 'firewall-cmd --add-port=7777/tcp --add-port=7777/udp --permanent || true'
-  - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${public_subnet_cidr} port port=${nlb_health_check_port} protocol=tcp accept" --permanent || true'
-  - 'firewall-cmd --add-rich-rule="rule family=ipv4 source address=${public_subnet_cidr} port port=${nlb_listener_port} protocol=tcp accept" --permanent || true'
-  - 'firewall-cmd --reload || true'
-
-  # Update repos and install CF WARP Client
+  # Configure firewall rules based on system capabilities
   - |
-    OUTPUT=$( (yum update -y && yum install -y cloudflare-warp) 2>&1 | tail -n 15 )
-    MESSAGE="⚠️ Host: $(hostname) | cloudflare-warp installed. Starting warp-svc...
-    \`\`\`
-    $OUTPUT
-    \`\`\`"
+    if command -v apt-get &> /dev/null; then
+      iptables -I INPUT -p tcp --dport 7777 -j ACCEPT
+      iptables -I INPUT -p udp --dport 7777 -j ACCEPT
+      iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_health_check_port} -j ACCEPT
+      iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_listener_port} -j ACCEPT
+      netfilter-persistent save || true
+    elif command -v firewall-cmd &> /dev/null && systemctl is-active firewalld &> /dev/null; then
+      firewall-cmd --permanent --add-port=7777/tcp
+      firewall-cmd --permanent --add-port=7777/udp
+      firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="${public_subnet_cidr}" port port="${nlb_health_check_port}" protocol="tcp" accept'
+      firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="${public_subnet_cidr}" port port="${nlb_listener_port}" protocol="tcp" accept'
+      firewall-cmd --reload
+    else
+      iptables -I INPUT -p tcp --dport 7777 -j ACCEPT
+      iptables -I INPUT -p udp --dport 7777 -j ACCEPT
+      iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_health_check_port} -j ACCEPT
+      iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_listener_port} -j ACCEPT
+      if command -v iptables-save &> /dev/null; then
+        iptables-save > /etc/sysconfig/iptables || true
+      fi
+    fi
+  
+  - |
+    MESSAGE="⚠️ Host: $(hostname) | cloudflare-warp installed. Starting warp-svc..."
     %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
     curl -s --fail -X POST \
       "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
@@ -96,12 +108,10 @@ runcmd:
     %{~ endif ~}
 
   - 'warp-cli --accept-tos registration delete || true'
+  - 'warp-cli --accept-tos connector new ${cf_warp_connector_secret}'
+  
   - |
-    OUTPUT=$(warp-cli --accept-tos connector new ${cf_warp_connector_secret} 2>&1)
-    MESSAGE="⚠️ Host: $(hostname) | Connector registered. Connecting...
-    \`\`\`
-    $OUTPUT
-    \`\`\`"
+    MESSAGE="⚠️ Host: $(hostname) | Connector registered. Connecting..."
     %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
     curl -s --fail -X POST \
       "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \

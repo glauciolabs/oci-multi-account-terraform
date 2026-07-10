@@ -6,6 +6,24 @@ JSON_FILE=$1
 ACCOUNT_ID=$2
 ACTION=$3
 WORK_DIR=$4
+OS=$5
+
+IMAGE_VAR_OPT=""
+if [[ -n "$OS" ]]; then
+  if [[ "$OS" == "ubuntu" ]]; then
+    IMAGE_OCID="ocid1.image.oc1.sa-saopaulo-1.aaaaaaaaxnifkyh62dquowtgdsesv2m5chkfgmyasfrlssr45ywl6dvd7ipq"
+    echo "🐧 Operating System chosen: Ubuntu (OCID: $IMAGE_OCID)"
+  elif [[ "$OS" == "oracle-linux-9" ]]; then
+    IMAGE_OCID="ocid1.image.oc1.sa-saopaulo-1.aaaaaaaa3qmskcjizyk6vsqiyioy7tyely37lg66xed7wukioeddw4uh2hzq"
+    echo "❤️ Operating System chosen: Oracle Linux 9 (OCID: $IMAGE_OCID)"
+  else
+    echo "⚠️ Unknown OS specified: $OS. Relying on default image_ocid configuration."
+  fi
+
+  if [[ -n "$IMAGE_OCID" ]]; then
+    IMAGE_VAR_OPT="-var=image_ocid=$IMAGE_OCID"
+  fi
+fi
 
 if [[ ! -f "$JSON_FILE" ]]; then
     echo "❌ File $JSON_FILE not found!"
@@ -83,7 +101,8 @@ terraform "$ACTION" $AUTO_APPROVE \
     -var="private_key_path=$(pwd)/private_key.pem" \
     -var="telegram_bot_token=${TELEGRAM_BOT_TOKEN}" \
     -var="telegram_chat_id=${TELEGRAM_CHAT_ID}" \
-    -var="cf_warp_connector_secret=${CF_WARP_CONNECTOR_SECRET}" || clean_files
+    -var="cf_warp_connector_secret=${CF_WARP_CONNECTOR_SECRET}" \
+    $IMAGE_VAR_OPT || clean_files
 
 echo "✅ Terraform $ACTION completed successfully!"
 clean_files

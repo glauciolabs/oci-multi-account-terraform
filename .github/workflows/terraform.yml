@@ -19,6 +19,13 @@ on:
           - 'plan'
           - 'apply'
           - 'destroy'
+      os:
+        description: "operating system"
+        required: true
+        type: choice
+        options:
+          - 'ubuntu'
+          - 'oracle-linux-9'
 
 jobs:
   terraform-lint:
@@ -119,7 +126,7 @@ jobs:
           fi
 
           echo "$DECODED_JSON" > "$TEMP_JSON_PATH"
-          bash ./scripts/deploy.sh "$TEMP_JSON_PATH" ${{ github.event.inputs.account_number }} ${{ github.event.inputs.operation }} $(pwd)/accounts
+          bash ./scripts/deploy.sh "$TEMP_JSON_PATH" ${{ github.event.inputs.account_number }} ${{ github.event.inputs.operation }} $(pwd)/accounts ${{ github.event.inputs.os }}
           rm -rf "$TEMP_JSON_PATH"
 
       - name: Clean up Terraform sensitive files
