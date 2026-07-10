@@ -131,9 +131,10 @@ variable "shared_volumes_config" {
 variable "default_user" {
   description = "Optional. Configuration for a default user to be created on the instance."
   type = object({
-    name   = string
-    groups = list(string)
-    sudo   = string
+    name     = string
+    groups   = list(string)
+    sudo     = string
+    password = optional(string)
   })
   default = null
 }

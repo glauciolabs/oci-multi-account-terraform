@@ -9,11 +9,18 @@ users:
     groups: [%{ for g in default_user_groups }${g}%{ if index(default_user_groups, g) < length(default_user_groups) - 1 }, %{ endif }%{ endfor }]
     shell: /bin/bash
     sudo: "${default_user_sudo}"
-    lock_passwd: true
+    lock_passwd: %{ if length(default_user_password) > 0 }false%{ else }true%{ endif }
     ssh_authorized_keys:
       - ${default_user_ssh_key}
 %{ else ~}
   []
+%{ endif ~}
+
+%{ if length(default_user_password) > 0 ~}
+chpasswd:
+  expire: false
+  users:
+    - {name: ${default_user_name}, password: ${default_user_password}, type: text}
 %{ endif ~}
 
 runcmd:

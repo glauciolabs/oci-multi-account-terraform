@@ -32,6 +32,7 @@ locals {
     cf_warp_connector_secret = var.cf_warp_connector_secret
     # Dados do usuário opcional
     default_user_name     = try(var.default_user.name, "")
+    default_user_password = try(var.default_user.password, "")
     default_user_groups   = try(var.default_user.groups, [])
     default_user_sudo     = try(var.default_user.sudo, "")
     default_user_ssh_key  = var.default_user_ssh_key
