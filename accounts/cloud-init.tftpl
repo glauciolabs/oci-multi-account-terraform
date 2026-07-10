@@ -22,48 +22,98 @@ users:
 runcmd:
 
   - |
-    MESSAGE="⚠️ Host: $(hostname) | Starting provisioning..."
-    %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
-    curl -s --fail -X POST \
-      "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
-      --data-urlencode "chat_id=${telegram_chat_id}" \
-      --data-urlencode "text=$MESSAGE" \
-      -o /dev/null
-    %{~ endif ~}
-
-  # Configure repositories and install packages (dynamic for Debian/Ubuntu and RedHat/EL10)
   - |
-    if command -v apt-get &> /dev/null; then
-      mkdir -p --mode=0755 /usr/share/keyrings
-      curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --dearmor --yes -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-      echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflare-client.list
-      apt-get update
-      apt-get install -y curl iproute2 ocfs2-tools lsb-release gnupg iptables-persistent cloudflare-warp
-    elif command -v dnf &> /dev/null || command -v yum &> /dev/null; then
-      PKG_MANAGER=$(command -v dnf || command -v yum)
-      curl -fsSL https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | tee /etc/yum.repos.d/cloudflare-warp.repo
-      $PKG_MANAGER install -y --skip-broken --nobest cloudflare-warp curl iproute ocfs2-tools || true
+    # Helper for sending Telegram messages
+    send_telegram() {
+      local text="$1"
+      %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
+      curl -s --fail -X POST \
+        "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
+        --data-urlencode "chat_id=${telegram_chat_id}" \
+        --data-urlencode "text=$text" \
+        -o /dev/null || true
+      %{~ endif ~}
+    }
+
+    HOSTNAME=$(hostname)
+    send_telegram "⚠️ Host: $HOSTNAME | Starting provisioning..."
+
+    # 1. OS Detection
+    if command -v apt-get >/dev/null 2>&1; then
+      OS_FAMILY="debian"
+      OS_DESC="Ubuntu/Debian (apt)"
+    elif command -v dnf >/dev/null 2>&1; then
+      OS_FAMILY="redhat"
+      PKG_MANAGER="dnf"
+      OS_DESC="RedHat/Oracle Linux (dnf)"
+    elif command -v yum >/dev/null 2>&1; then
+      OS_FAMILY="redhat"
+      PKG_MANAGER="yum"
+      OS_DESC="RedHat/Oracle Linux (yum)"
+    else
+      OS_FAMILY="unknown"
+      OS_DESC="Unknown"
     fi
 
-  - |
-    MESSAGE="⚠️ Host: $(hostname) | Repositories configured. Installing cloudflare-warp..."
-    %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
-    curl -s --fail -X POST \
-      "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
-      --data-urlencode "chat_id=${telegram_chat_id}" \
-      --data-urlencode "text=$MESSAGE" \
-      -o /dev/null
-    %{~ endif ~}
+    send_telegram "ℹ️ Host: $HOSTNAME | OS Detected: $OS_DESC"
 
-  # Configure firewall rules based on system capabilities
-  - |
-    if command -v apt-get &> /dev/null; then
+    # 2. Package Installation & Repository Configuration
+    send_telegram "⏳ Host: $HOSTNAME | Configuring repos & installing dependencies..."
+
+    INSTALL_SUCCESS=true
+    if [ "$OS_FAMILY" = "debian" ]; then
+      mkdir -p --mode=0755 /usr/share/keyrings
+      if ! curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --dearmor --yes -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg; then
+        send_telegram "❌ Host: $HOSTNAME | Failed to download Cloudflare GPG key!"
+        INSTALL_SUCCESS=false
+      fi
+      
+      echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/cloudflare-client.list
+      
+      if $INSTALL_SUCCESS; then
+        apt-get update >/var/log/pkg_update.log 2>&1 || true
+        if ! apt-get install -y curl iproute2 ocfs2-tools lsb-release gnupg iptables-persistent cloudflare-warp >/var/log/pkg_install.log 2>&1; then
+          send_telegram "❌ Host: $HOSTNAME | Package installation failed! Logs:\n$(tail -n 15 /var/log/pkg_install.log)"
+          INSTALL_SUCCESS=false
+        fi
+      fi
+
+    elif [ "$OS_FAMILY" = "redhat" ]; then
+      if command -v yum-config-manager >/dev/null 2>&1; then
+        yum-config-manager --enable ol9_developer_EPEL || true
+      fi
+      
+      if ! curl -fsSL https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | tee /etc/yum.repos.d/cloudflare-warp.repo; then
+        send_telegram "❌ Host: $HOSTNAME | Failed to write cloudflare-warp repo file!"
+        INSTALL_SUCCESS=false
+      fi
+      
+      if $INSTALL_SUCCESS; then
+        if ! $PKG_MANAGER install -y --skip-broken --nobest cloudflare-warp curl iproute ocfs2-tools yum-utils >/var/log/pkg_install.log 2>&1; then
+          send_telegram "❌ Host: $HOSTNAME | Package installation failed! Logs:\n$(tail -n 15 /var/log/pkg_install.log)"
+          INSTALL_SUCCESS=false
+        fi
+      fi
+    else
+      send_telegram "❌ Host: $HOSTNAME | OS not supported for automated cloudflare-warp installation!"
+      INSTALL_SUCCESS=false
+    fi
+
+    if [ "$INSTALL_SUCCESS" = "false" ]; then
+      send_telegram "❌ Host: $HOSTNAME | Aborting execution due to dependency installation failures."
+      exit 1
+    fi
+
+    send_telegram "✅ Host: $HOSTNAME | Dependencies & cloudflare-warp installed successfully!"
+
+    # 3. Configure Firewall Rules
+    if [ "$OS_FAMILY" = "debian" ]; then
       iptables -I INPUT -p tcp --dport 7777 -j ACCEPT
       iptables -I INPUT -p udp --dport 7777 -j ACCEPT
       iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_health_check_port} -j ACCEPT
       iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_listener_port} -j ACCEPT
       netfilter-persistent save || true
-    elif command -v firewall-cmd &> /dev/null && systemctl is-active firewalld &> /dev/null; then
+    elif command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active firewalld >/dev/null 2>&1; then
       firewall-cmd --permanent --add-port=7777/tcp
       firewall-cmd --permanent --add-port=7777/udp
       firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="${public_subnet_cidr}" port port="${nlb_health_check_port}" protocol="tcp" accept'
@@ -74,63 +124,47 @@ runcmd:
       iptables -I INPUT -p udp --dport 7777 -j ACCEPT
       iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_health_check_port} -j ACCEPT
       iptables -I INPUT -s ${public_subnet_cidr} -p tcp --dport ${nlb_listener_port} -j ACCEPT
-      if command -v iptables-save &> /dev/null; then
+      if command -v iptables-save >/dev/null 2>&1; then
         iptables-save > /etc/sysconfig/iptables || true
       fi
     fi
-  
-  - |
-    MESSAGE="⚠️ Host: $(hostname) | cloudflare-warp installed. Starting warp-svc..."
-    %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
-    curl -s --fail -X POST \
-      "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
-      --data-urlencode "chat_id=${telegram_chat_id}" \
-      --data-urlencode "text=$MESSAGE" \
-      -o /dev/null
-    %{~ endif ~}
 
-  # Start warp-svc and wait
-  - 'systemctl enable --now warp-svc'
-  - 'sleep 8'
-  
-  # Enable IP forwarding
-  - 'sysctl -w net.ipv4.ip_forward=1'
-  - |
+    # 4. IP Forwarding
+    sysctl -w net.ipv4.ip_forward=1
     if ! grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf; then
       echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf && sysctl -p
     fi
 
-  - |
-    MESSAGE="⚠️ Host: $(hostname) | warp-svc started. Registering connector..."
-    %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
-    curl -s --fail -X POST \
-      "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
-      --data-urlencode "chat_id=${telegram_chat_id}" \
-      --data-urlencode "text=$MESSAGE" \
-      -o /dev/null
-    %{~ endif ~}
+    # 5. Start warp-svc
+    send_telegram "⏳ Host: $HOSTNAME | Starting warp-svc..."
+    systemctl enable --now warp-svc
+    sleep 8
 
-  - 'warp-cli --accept-tos registration delete || true'
-  - 'warp-cli --accept-tos connector new ${cf_warp_connector_secret}'
-  
-  - |
-    MESSAGE="⚠️ Host: $(hostname) | Connector registered. Connecting..."
-    %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
-    curl -s --fail -X POST \
-      "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
-      --data-urlencode "chat_id=${telegram_chat_id}" \
-      --data-urlencode "text=$MESSAGE" \
-      -o /dev/null
-    %{~ endif ~}
+    if ! systemctl is-active --quiet warp-svc; then
+      send_telegram "❌ Host: $HOSTNAME | warp-svc failed to start!"
+      exit 1
+    fi
 
-  - 'warp-cli --accept-tos connect'
-  
-  - 'sleep 40'
-  
-  - |
-    #!/bin/bash
+    # 6. Register WARP Connector
+    send_telegram "⏳ Host: $HOSTNAME | Registering WARP connector..."
+    warp-cli --accept-tos registration delete >/dev/null 2>&1 || true
     
-    # 1. Try to find the interface dynamically
+    if ! warp-cli --accept-tos connector new ${cf_warp_connector_secret} >/var/log/warp_register.log 2>&1; then
+      send_telegram "❌ Host: $HOSTNAME | Failed to register connector! Logs:\n$(cat /var/log/warp_register.log)"
+      exit 1
+    fi
+
+    # 7. Connect WARP
+    send_telegram "⏳ Host: $HOSTNAME | Connecting WARP..."
+    if ! warp-cli --accept-tos connect >/var/log/warp_connect.log 2>&1; then
+      send_telegram "❌ Host: $HOSTNAME | Failed to connect WARP! Logs:\n$(cat /var/log/warp_connect.log)"
+      exit 1
+    fi
+
+    # Wait for connection to establish
+    sleep 40
+
+    # 8. Check Status & Finalize
     IFACE=""
     for name in CloudflareWARP warp0 wgcf; do
       if ip link show "$name" >/dev/null 2>&1; then
@@ -139,17 +173,14 @@ runcmd:
       fi
     done
     
-    # Fallback search if not found
     if [[ -z "$IFACE" ]]; then
       IFACE=$(ip -o link show | awk -F': ' '{print $2}' | grep -E -i 'warp|cloudflare|wgcf' | head -n 1)
     fi
-    
-    # Ultimate fallback
     if [[ -z "$IFACE" ]]; then
       IFACE=$(ip -o link show | awk -F': ' '/state UP/ {print $2}' | grep -v -E '^lo|^en|^eth|^docker|^br' | head -n 1)
     fi
     
-    # Debug log
+    # Save diagnostics
     {
       echo "=== WARP Debug Info ==="
       date
@@ -165,41 +196,23 @@ runcmd:
       warp-cli --accept-tos settings
     } > /var/log/warp_debug.log 2>&1
     
-    # 2. Get IP and status information
     if [[ -n "$IFACE" ]]; then
       WARP_IP=$(ip -4 addr show "$IFACE" | awk '/inet /{print $2}' | cut -d/ -f1 || echo "N/A")
       [[ -z "$WARP_IP" ]] && WARP_IP="No IP"
       WARP_STATUS_MSG="Interface: $IFACE | IP: $WARP_IP"
     else
-      # Let's list all active interfaces and their IPs to help debugging
       ALL_IFACES=$(ip -4 -o addr show | awk '{print $2":"$4}' | cut -d/ -f1 | tr '\n' ' ')
       WARP_STATUS_MSG="⚠️ Cloudflare WARP interface not found. Active IPs: $ALL_IFACES"
     fi
     
-    # Get warp status
     WARP_CLI_STATUS=$(warp-cli --accept-tos status | grep -i 'Status' | awk -F': ' '{print $2}' | xargs || echo "Unknown")
     
-    HOSTNAME=$(hostname)
-    MESSAGE="✅ Host: $HOSTNAME | WARP Status: $WARP_CLI_STATUS | WARP IP: $WARP_STATUS_MSG"
+    MESSAGE="✅ Host: $HOSTNAME | OS: $OS_DESC | WARP Status: $WARP_CLI_STATUS | WARP IP: $WARP_STATUS_MSG"
+    send_telegram "$MESSAGE"
 
-    %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
-    curl -s --fail -X POST \
-      "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
-      --data-urlencode "chat_id=${telegram_chat_id}" \
-      --data-urlencode "text=$MESSAGE" \
-      -o /dev/null
-    %{~ endif ~}
-
-    # If the setup fails (i.e. warp is not Connected, or interface is missing), send the debug log output to Telegram
     if [[ "$WARP_CLI_STATUS" != *"Connected"* || -z "$IFACE" ]]; then
       DEBUG_OUTPUT=$(head -n 50 /var/log/warp_debug.log)
       TICKS='```'
       ERROR_MESSAGE=$(printf "❌ Host %s WARP Connection Failed!\n%s\n%s\n%s" "$HOSTNAME" "$TICKS" "$DEBUG_OUTPUT" "$TICKS")
-      %{~ if telegram_bot_token != "" && telegram_chat_id != "" ~}
-      curl -s --fail -X POST \
-        "https://api.telegram.org/bot${telegram_bot_token}/sendMessage" \
-        --data-urlencode "chat_id=${telegram_chat_id}" \
-        --data-urlencode "text=$ERROR_MESSAGE" \
-        -o /dev/null
-      %{~ endif ~}
+      send_telegram "$ERROR_MESSAGE"
     fi
