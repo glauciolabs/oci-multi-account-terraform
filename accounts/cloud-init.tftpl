@@ -11,7 +11,7 @@ users:
     sudo: "${default_user_sudo}"
     lock_passwd: %{ if length(default_user_password) > 0 }false%{ else }true%{ endif }
     %{ if length(default_user_password) > 0 ~}
-    passwd: "${default_user_password}"
+    passwd: '${default_user_password}'
     %{ endif ~}
     ssh_authorized_keys:
       - ${default_user_ssh_key}
@@ -35,6 +35,18 @@ runcmd:
     }
 
     HOSTNAME=$(hostname)
+
+    # Bootstrap: Ensure curl is installed before sending any Telegram alerts
+    if ! command -v curl >/dev/null 2>&1; then
+      if command -v apt-get >/dev/null 2>&1; then
+        apt-get update && apt-get install -y curl
+      elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y curl
+      elif command -v yum >/dev/null 2>&1; then
+        yum install -y curl
+      fi
+    fi
+
     send_telegram "⚠️ Host: $HOSTNAME | Starting provisioning..."
 
     # 1. OS Detection
